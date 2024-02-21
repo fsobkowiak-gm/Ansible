@@ -1,0 +1,153 @@
+---
+- hosts: all
+  remote_user: pi
+  gather_facts: no
+  serial: 1 #ile hostów na raz
+  strategy: free
+  tasks:
+    - name: Check for config.json
+      stat:
+        path: /home/pi/config.json
+      register: config_json
+      ignore_errors: yes
+
+    - name: Check for .env file
+      stat:
+        path: /home/pi/.env
+      register: env_file
+      ignore_errors: yes
+
+    - name: Check for docker-compose.monitoring.prod.yml
+      stat:
+        path: /home/pi/docker-compose.monitoring.prod.yml
+      register: docker_compose_monitoring_prod
+      ignore_errors: yes
+
+    - name: Check for docker-compose.monitoring.yml
+      stat:
+        path: /home/pi/docker-compose.monitoring.yml
+      register: docker_compose_monitoring
+      ignore_errors: yes
+
+    - name: Check for docker-compose-service.yml
+      stat:
+        path: /home/pi/docker-compose-service.yml
+      register: docker_compose_service
+      ignore_errors: yes
+
+    - name: Check for docker-compose.yml
+      stat:
+        path: /home/pi/docker-compose.yml
+      register: docker_compose
+      ignore_errors: yes
+
+# Poniżej zrobiono w celu edycji gdy błąd bedzie 1 to debug bedzie wgranie odpowiedniego dockera
+    - name: Print message if docker-compose.monitoring.prod.yml is missing
+      debug:
+        msg: "Brakuje pliku docker-compose.monitoring.prod.yml."
+      when: not docker_compose_monitoring_prod.stat.exists
+
+    - name: Print message if docker-compose.monitoring.yml is missing
+      debug:
+        msg: "Brakuje pliku docker-compose.monitoring.yml."
+      when: not docker_compose_monitoring.stat.exists
+
+    - name: Print message if docker-compose-service.yml is missing
+      debug:
+        msg: "Brakuje pliku docker-compose-service.yml."
+      when: not docker_compose_service.stat.exists
+
+    - name: Print message if docker-compose.yml is missing
+      debug:
+        msg: "Brakuje pliku docker-compose.yml."
+      when: not docker_compose.stat.exists
+
+    - name: Print message if config.json is missing
+      debug:
+          msg: "Brakuje pliku config.json."
+      when: not config_json.stat.exists
+
+    - name: Print message if .env file is missing
+      debug:
+        msg: "Brakuje pliku .env."
+      when: not env_file.stat.exists
+
+
+      #sprawdzenie czy SSID jest poprawne
+    - name: Get SSID of wlan0
+      shell: iw dev wlan0 info | grep ssid | awk '{print $2}'
+      register: ssid_output
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Verify if SSID matches 'Student_Depot_R(dowolnaliczba)'
+      fail:
+      msg: "The SSID does not match the pattern 'Student_Depot_R(dowolnaliczba)'"
+      when: not (ssid_output.stdout | regex_search('Student_Depot_R\\\\d+')) #sprawdzenie dowolnej liczby na koncu znaków
+
+    #sprawdzamy czy są dockery soulbox/access-point/monitoring-prod
+
+    - name: Check for Docker container 'soulbox'
+      shell: docker ps --format "{{ '{{.Names}}' }}" | grep -w 'soulbox'
+      register: soulbox_container
+      failed_when: soulbox_container.stdout == ""
+      ignore_errors: yes
+
+    - name: Check for Docker container 'access-point'
+      shell: docker ps --format "{{ '{{.Names}}' }}" | grep -w 'access-point'
+      register: access_point_container
+      failed_when: access_point_container.stdout == ""
+      ignore_errors: yes
+
+    - name: Check for Docker container 'monitoring-prod'
+      shell: docker ps --format "{{ '{{.Names}}' }}" | grep -w 'monitoring-prod'
+      register: monitoring_prod_container
+      failed_when: monitoring_prod_container.stdout == ""
+      ignore_errors: yes
+
+    - name: Print message if 'soulbox' container is missing or not running
+      debug:
+         msg: "Brak kontenera 'soulbox'"
+      when: soulbox_container is failed
+
+    - name: Print message if 'access-point' container is missing or not running
+      debug:
+         msg: "Brak kontenera 'access-point'"
+      when: access_point_container is failed
+
+    - name: Print message if 'monitoring-prod' container is missing or not running
+      debug:
+         msg: "Brak kontenera 'monitoring-prod'"
+      when: monitoring_prod_container is failed
+
+
+    #sprawdzamy czy są dockery soulbox/access-point/monitoring-prod Rozwiązanie2 (lepsze)
+    - name: Get info on Docker container 'soulbox'
+      community.docker.docker_container_info:
+        name: soulbox
+      register: soulbox_container
+
+    - name: Get info on Docker container 'access-point'
+      community.docker.docker_container_info:
+        name: access-point
+      register: access_point_container
+
+    - name: Get info on Docker container 'monitoring-prod'
+      community.docker.docker_container_info:
+        name: monitoring-prod
+      register: monitoring_prod_container
+
+    - name: Print message if 'soulbox' container is not running
+      debug:
+        msg: "Problem z kontenerem 'soulbox'"
+      when: not soulbox_container.exists or soulbox_container.container.State.Status != "running"
+
+    - name: Print message if 'access-point' container is not running
+      debug:
+        msg: "Problem z kontenerem 'access-point'"
+      when: not access_point_container.exists or access_point_container.container.State.Status != "running"
+
+    - name: Print message if 'monitoring-prod' container is not running
+      debug:
+        msg: "Problem z kontenerem 'monitoring-prod'"
+      when: not monitoring_prod_container.exists or monitoring_prod_container.container.State.Status != "running"
